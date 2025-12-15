@@ -43,7 +43,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Left side - Branding */}
+   
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary/20 via-background to-background-light items-center justify-center p-12">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

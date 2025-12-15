@@ -28,7 +28,7 @@ export default function NotFound() {
         <Link href="/">
           <Button className="gap-2">
             <Home className="h-4 w-4" />
-            Back to Home
+            Back to Home page
           </Button>
         </Link>
       </motion.div>
