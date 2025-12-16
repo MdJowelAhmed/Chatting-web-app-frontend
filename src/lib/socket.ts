@@ -1,7 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 import type { Message, TypingEvent, MessageReadEvent, OnlineStatusEvent, CallSignalEvent } from '@/types';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://10.10.7.62:5000';
+// Use localhost for secure context - WebRTC requires HTTPS or localhost
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -16,8 +17,10 @@ class SocketService {
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
 
     this.socket.on('connect', () => {
@@ -30,6 +33,14 @@ class SocketService {
 
     this.socket.on('connect_error', (error) => {
       console.error('❌ Socket connection error:', error);
+    });
+
+    this.socket.on('reconnect', (attemptNumber) => {
+      console.log('🔄 Socket reconnected after', attemptNumber, 'attempts');
+    });
+
+    this.socket.on('reconnect_attempt', (attemptNumber) => {
+      console.log('🔄 Socket reconnection attempt:', attemptNumber);
     });
 
     return this.socket;
@@ -132,56 +143,73 @@ class SocketService {
 
   // ============ WEBRTC SIGNALING ============
 
-  callUser(data: { userToCall: string; signalData: any; callType: 'audio' | 'video'; callId: string }): void {
+  // Initiate a call - sends SDP offer to the callee
+  callUser(data: { userToCall: string; signalData: RTCSessionDescriptionInit; callType: 'audio' | 'video'; callId: string }): void {
+    console.log('📞 Emitting call-user:', data.userToCall);
     this.socket?.emit('call-user', data);
   }
 
-  answerCall(data: { signal: any; to: string; callId: string }): void {
+  // Answer a call - sends SDP answer back to the caller
+  answerCall(data: { signal: RTCSessionDescriptionInit; to: string; callId: string }): void {
+    console.log('📞 Emitting answer-call to:', data.to);
     this.socket?.emit('answer-call', data);
   }
 
-  sendIceCandidate(data: { candidate: any; to: string }): void {
+  // Send ICE candidate for trickle ICE
+  sendIceCandidate(data: { candidate: RTCIceCandidateInit; to: string }): void {
+    console.log('🧊 Emitting ice-candidate to:', data.to);
     this.socket?.emit('ice-candidate', data);
   }
 
+  // Reject an incoming call
   rejectCall(data: { to: string; callId: string }): void {
+    console.log('❌ Emitting reject-call to:', data.to);
     this.socket?.emit('reject-call', data);
   }
 
+  // End an ongoing call
   endCall(data: { to: string; callId: string }): void {
+    console.log('📴 Emitting end-call to:', data.to);
     this.socket?.emit('end-call', data);
   }
 
+  // Listen for incoming call with SDP offer
   onIncomingCallSignal(callback: (data: CallSignalEvent) => void): () => void {
     this.socket?.on('incoming-call-signal', callback);
     return () => this.socket?.off('incoming-call-signal', callback);
   }
 
-  onCallAccepted(callback: (data: { signal: any; from: string; callId: string }) => void): () => void {
+  // Listen for call accepted with SDP answer
+  onCallAccepted(callback: (data: { signal: RTCSessionDescriptionInit; from: string; callId: string }) => void): () => void {
     this.socket?.on('call-accepted', callback);
     return () => this.socket?.off('call-accepted', callback);
   }
 
-  onIceCandidate(callback: (data: { candidate: any; from: string }) => void): () => void {
+  // Listen for ICE candidates
+  onIceCandidate(callback: (data: { candidate: RTCIceCandidateInit; from: string }) => void): () => void {
     this.socket?.on('ice-candidate', callback);
     return () => this.socket?.off('ice-candidate', callback);
   }
 
+  // Listen for call rejected
   onCallRejected(callback: (data: { from: string; callId: string }) => void): () => void {
     this.socket?.on('call-rejected', callback);
     return () => this.socket?.off('call-rejected', callback);
   }
 
+  // Listen for call ended
   onCallEnded(callback: (data: { from: string; callId: string }) => void): () => void {
     this.socket?.on('call-ended', callback);
     return () => this.socket?.off('call-ended', callback);
   }
 
+  // Listen for user busy
   onUserBusy(callback: (data: { from: string; callId: string }) => void): () => void {
     this.socket?.on('user-busy', callback);
     return () => this.socket?.off('user-busy', callback);
   }
 
+  // Listen for user unavailable (offline)
   onUserUnavailable(callback: (data: { userId: string }) => void): () => void {
     this.socket?.on('user-unavailable', callback);
     return () => this.socket?.off('user-unavailable', callback);
@@ -205,6 +233,25 @@ class SocketService {
   onUserLeftCall(callback: (data: { userId: string; userName: string }) => void): () => void {
     this.socket?.on('user-left-call', callback);
     return () => this.socket?.off('user-left-call', callback);
+  }
+
+  // Group call signaling
+  sendGroupCallSignal(data: { roomId: string; userToSignal: string; signal: RTCSessionDescriptionInit }): void {
+    this.socket?.emit('group-call-signal', data);
+  }
+
+  sendGroupCallReturnSignal(data: { to: string; signal: RTCSessionDescriptionInit }): void {
+    this.socket?.emit('group-call-return-signal', data);
+  }
+
+  onGroupCallSignal(callback: (data: { signal: RTCSessionDescriptionInit; from: string; fromName: string; roomId: string }) => void): () => void {
+    this.socket?.on('group-call-signal', callback);
+    return () => this.socket?.off('group-call-signal', callback);
+  }
+
+  onGroupCallSignalReturned(callback: (data: { signal: RTCSessionDescriptionInit; from: string }) => void): () => void {
+    this.socket?.on('group-call-signal-returned', callback);
+    return () => this.socket?.off('group-call-signal-returned', callback);
   }
 
   // ============ SCREEN SHARING ============
@@ -231,4 +278,3 @@ class SocketService {
 // Export singleton instance
 export const socketService = new SocketService();
 export default socketService;
-

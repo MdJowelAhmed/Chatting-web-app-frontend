@@ -7,13 +7,19 @@ import {
   Phone,
   Video,
   MoreVertical,
-  Search,
   Circle,
   Users,
+  Ban,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { TypingIndicator } from './TypingIndicator';
@@ -22,7 +28,8 @@ import { useChatStore } from '@/store/chatStore';
 import { useAuthStore } from '@/store/authStore';
 import { useCallStore } from '@/store/callStore';
 import { socketService } from '@/lib/socket';
-import { callsApi } from '@/lib/api';
+import { callsApi, usersApi } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 import {
   getConversationName,
   getConversationAvatar,
@@ -49,6 +56,7 @@ export function ChatWindow({ onBack }: ChatWindowProps) {
     typingUsers,
   } = useChatStore();
   const { startCall, setActiveCall } = useCallStore();
+  const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
@@ -83,19 +91,85 @@ export function ChatWindow({ onBack }: ChatWindowProps) {
     const otherUser = getOtherUser(activeConversation, user?._id || '');
     if (!otherUser) return;
 
+    // Check if WebRTC is available (requires HTTPS or localhost)
+    if (typeof window !== 'undefined') {
+      const isSecureContext = window.isSecureContext;
+      const isLocalhost = window.location.hostname === 'localhost' || 
+                          window.location.hostname === '127.0.0.1';
+      
+      if (!isSecureContext && !isLocalhost) {
+        toast({
+          title: 'Secure Connection Required',
+          description: 'Video/audio calls require HTTPS. Please access the app via localhost:3004',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast({
+          title: 'Not Supported',
+          description: 'Your browser does not support video/audio calls. Please use Chrome, Firefox, or Edge.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
     try {
-      startCall(type);
+      // First, create the call via API
       const response = await callsApi.initiateCall(
         otherUser._id,
         type,
         activeConversation.type === 'group',
         activeConversation._id
       );
+      
       if (response.success && response.data) {
+        console.log('📞 Call initiated:', response.data._id);
+        
+        // Set active call data
         setActiveCall(response.data);
+        
+        // Start the call UI (this will trigger WebRTC initialization)
+        startCall(type);
+      } else {
+        toast({
+          title: 'Call Failed',
+          description: 'Could not initiate the call',
+          variant: 'destructive',
+        });
       }
     } catch (error) {
       console.error('Error initiating call:', error);
+      toast({
+        title: 'Call Failed',
+        description: 'An error occurred while starting the call',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleBlockUser = async () => {
+    if (!activeConversation || activeConversation.type === 'group') return;
+
+    const otherUser = getOtherUser(activeConversation, user?._id || '');
+    if (!otherUser) return;
+
+    try {
+      const response = await usersApi.blockUser(otherUser._id);
+      if (response.success) {
+        toast({
+          title: 'User Blocked',
+          description: `${otherUser.name} has been blocked successfully.`,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to block user',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -182,20 +256,28 @@ export function ChatWindow({ onBack }: ChatWindowProps) {
           >
             <Phone className="h-5 w-5" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-text-secondary hover:text-text-primary"
-          >
-            <Search className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-text-secondary hover:text-text-primary"
-          >
-            <MoreVertical className="h-5 w-5" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-text-secondary hover:text-text-primary"
+              >
+                <MoreVertical className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {activeConversation.type !== 'group' && (
+                <DropdownMenuItem
+                  onClick={handleBlockUser}
+                  className="text-danger focus:text-danger cursor-pointer"
+                >
+                  <Ban className="h-4 w-4 mr-2" />
+                  Block User
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

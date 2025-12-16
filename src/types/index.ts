@@ -159,11 +159,16 @@ export interface IncomingCallEvent {
 }
 
 export interface CallSignalEvent {
-  signal: RTCSessionDescriptionInit | RTCIceCandidateInit;
+  signal: RTCSessionDescriptionInit;
   from: string;
   callerName?: string;
   callerAvatar?: string;
   callType?: CallType;
   callId?: string;
+}
+
+export interface IceCandidateEvent {
+  candidate: RTCIceCandidateInit;
+  from: string;
 }
 
