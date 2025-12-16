@@ -17,6 +17,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { TypingIndicator } from './TypingIndicator';
+import { ForwardMessageModal } from './ForwardMessageModal';
 import { useChatStore } from '@/store/chatStore';
 import { useAuthStore } from '@/store/authStore';
 import { useCallStore } from '@/store/callStore';
@@ -31,6 +32,7 @@ import {
   formatLastSeen,
   getMediaUrl,
 } from '@/lib/utils';
+import type { Message } from '@/types';
 
 interface ChatWindowProps {
   onBack: () => void;
@@ -49,6 +51,7 @@ export function ChatWindow({ onBack }: ChatWindowProps) {
   const { startCall, setActiveCall } = useCallStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
 
   const conversationMessages = messages.get(activeConversation?._id || '') || [];
   const typing = typingUsers.get(activeConversation?._id || '') || [];
@@ -94,6 +97,10 @@ export function ChatWindow({ onBack }: ChatWindowProps) {
     } catch (error) {
       console.error('Error initiating call:', error);
     }
+  };
+
+  const handleForwardMessage = (message: Message) => {
+    setForwardMessage(message);
   };
 
   if (!activeConversation) return null;
@@ -213,10 +220,10 @@ export function ChatWindow({ onBack }: ChatWindowProps) {
             </div>
           ) : (
             conversationMessages.map((message, index) => {
-              const showDate = index === 0 || 
-                new Date(message.createdAt).toDateString() !== 
+              const showDate = index === 0 ||
+                new Date(message.createdAt).toDateString() !==
                 new Date(conversationMessages[index - 1].createdAt).toDateString();
-              
+
               return (
                 <div key={message._id}>
                   {showDate && (
@@ -238,6 +245,7 @@ export function ChatWindow({ onBack }: ChatWindowProps) {
                         : message.sender._id === user?._id
                     }
                     showSender={activeConversation.type === 'group'}
+                    onForward={handleForwardMessage}
                   />
                 </div>
               );
@@ -251,7 +259,14 @@ export function ChatWindow({ onBack }: ChatWindowProps) {
 
       {/* Message Input */}
       <MessageInput conversationId={activeConversation._id} />
+
+      {/* Forward Message Modal */}
+      <ForwardMessageModal
+        isOpen={forwardMessage !== null}
+        onClose={() => setForwardMessage(null)}
+        message={forwardMessage}
+        currentUserId={user?._id || ''}
+      />
     </div>
   );
 }
-

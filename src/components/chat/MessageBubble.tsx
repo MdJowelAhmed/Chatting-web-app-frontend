@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Check,
   CheckCheck,
@@ -12,27 +12,42 @@ import {
   Reply,
   Forward,
   Trash2,
-  Star,
   Copy,
   MoreVertical,
+  X,
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { formatMessageTime, formatFileSize, getFileIcon, getInitials, getMediaUrl } from '@/lib/utils';
 import { useChatStore } from '@/store/chatStore';
+import { messagesApi } from '@/lib/api';
+import { toast } from '@/hooks/use-toast';
 import type { Message } from '@/types';
 
 interface MessageBubbleProps {
   message: Message;
   isOwn: boolean;
   showSender?: boolean;
+  onForward?: (message: Message) => void;
 }
 
-export function MessageBubble({ message, isOwn, showSender = false }: MessageBubbleProps) {
-  const { setReplyingTo } = useChatStore();
+// Emoji reactions
+const REACTIONS = [
+  { emoji: '👍', label: 'like' },
+  { emoji: '❤️', label: 'love' },
+  { emoji: '🥰', label: 'care' },
+  { emoji: '😂', label: 'funny' },
+  { emoji: '😢', label: 'sad' },
+];
+
+export function MessageBubble({ message, isOwn, showSender = false, onForward }: MessageBubbleProps) {
+  const { setReplyingTo, updateMessage, deleteMessage, activeConversation } = useChatStore();
   const [showMenu, setShowMenu] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  const [showDeleteOptions, setShowDeleteOptions] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
+  const [isDeleting, setIsDeleting] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const sender = typeof message.sender === 'object' ? message.sender : null;
@@ -48,6 +63,103 @@ export function MessageBubble({ message, isOwn, showSender = false }: MessageBub
       default:
         return <Clock className="h-3 w-3 text-text-secondary" />;
     }
+  };
+
+  // Handle copy message
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      toast({
+        title: 'Copied!',
+        description: 'Message copied to clipboard',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to copy message',
+        variant: 'destructive',
+      });
+    }
+    setShowMenu(false);
+  };
+
+  // Handle reaction
+  const handleReaction = async (emoji: string) => {
+    try {
+      const response = await messagesApi.reactToMessage(message._id, emoji);
+      if (response.success && activeConversation) {
+        updateMessage(activeConversation._id, message._id, { reactions: response.data.reactions });
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to add reaction',
+        variant: 'destructive',
+      });
+    }
+    setShowReactions(false);
+    setShowMenu(false);
+  };
+
+  // Handle delete for me
+  const handleDeleteForMe = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await messagesApi.deleteForMe(message._id);
+      if (response.success && activeConversation) {
+        deleteMessage(activeConversation._id, message._id);
+        toast({
+          title: 'Deleted',
+          description: 'Message deleted for you',
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to delete message',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteOptions(false);
+      setShowMenu(false);
+    }
+  };
+
+  // Handle delete for everyone
+  const handleDeleteForEveryone = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await messagesApi.deleteForEveryone(message._id);
+      if (response.success && activeConversation) {
+        updateMessage(activeConversation._id, message._id, {
+          isDeletedForEveryone: true,
+          content: ''
+        });
+        toast({
+          title: 'Deleted',
+          description: 'Message deleted for everyone',
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to delete message',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteOptions(false);
+      setShowMenu(false);
+    }
+  };
+
+  // Handle forward
+  const handleForward = () => {
+    if (onForward) {
+      onForward(message);
+    }
+    setShowMenu(false);
   };
 
   if (message.isDeletedForEveryone) {
@@ -224,24 +336,42 @@ export function MessageBubble({ message, isOwn, showSender = false }: MessageBub
       )}
 
       <div className="relative max-w-[70%]">
-        {/* Reply preview */}
+        {/* Reply preview - improved design */}
         {message.replyTo && (
           <div
-            className={`mb-1 p-2 rounded-lg text-xs ${isOwn ? 'bg-outgoing/80' : 'bg-incoming/80'
-              } border-l-2 border-primary`}
+            className={`mb-1 px-3 py-2 rounded-lg text-xs cursor-pointer
+              ${isOwn
+                ? 'bg-gradient-to-r from-primary/20 to-primary/10 border-l-4 border-primary'
+                : 'bg-gradient-to-r from-surface-hover to-surface border-l-4 border-primary'
+              }`}
+            onClick={() => {
+              // Scroll to original message if needed
+              const element = document.getElementById(`message-${message.replyTo?._id}`);
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                element.classList.add('ring-2', 'ring-primary');
+                setTimeout(() => element.classList.remove('ring-2', 'ring-primary'), 2000);
+              }
+            }}
           >
-            <p className="text-primary font-medium">
-              {typeof message.replyTo.sender === 'object'
-                ? message.replyTo.sender.name
-                : 'Unknown'}
+            <div className="flex items-center gap-2">
+              <Reply className="h-3 w-3 text-primary shrink-0" />
+              <p className="text-primary font-semibold truncate">
+                {typeof message.replyTo.sender === 'object'
+                  ? message.replyTo.sender.name
+                  : 'Unknown'}
+              </p>
+            </div>
+            <p className="text-text-secondary truncate mt-0.5 pl-5">
+              {message.replyTo.content || (message.replyTo.type !== 'text' ? `📎 ${message.replyTo.type}` : '')}
             </p>
-            <p className="text-text-secondary truncate">{message.replyTo.content}</p>
           </div>
         )}
 
         {/* Message bubble */}
         <div
-          className={`relative px-3 py-2 rounded-lg ${isOwn
+          id={`message-${message._id}`}
+          className={`relative px-3 py-2 rounded-lg transition-all duration-300 ${isOwn
             ? 'bg-outgoing rounded-tr-none'
             : 'bg-incoming rounded-tl-none'
             }`}
@@ -249,6 +379,13 @@ export function MessageBubble({ message, isOwn, showSender = false }: MessageBub
           {/* Sender name for groups */}
           {!isOwn && showSender && sender && (
             <p className="text-xs text-primary font-medium mb-1">{sender.name}</p>
+          )}
+
+          {/* Forwarded indicator */}
+          {message.isForwarded && (
+            <p className="text-[10px] text-text-secondary italic mb-1 flex items-center gap-1">
+              <Forward className="h-3 w-3" /> Forwarded
+            </p>
           )}
 
           {/* Message content */}
@@ -262,19 +399,21 @@ export function MessageBubble({ message, isOwn, showSender = false }: MessageBub
             {isOwn && getStatusIcon()}
           </div>
 
-          {/* Reactions */}
+          {/* Reactions display */}
           {message.reactions && message.reactions.length > 0 && (
-            <div className="absolute -bottom-3 left-2 flex bg-surface rounded-full px-1 py-0.5 shadow">
-              {message.reactions.slice(0, 3).map((reaction, i) => (
-                <span key={i} className="text-xs">
-                  {reaction.emoji}
+            <div className="absolute -bottom-3 left-2 flex bg-surface rounded-full px-1.5 py-0.5 shadow-lg border border-border">
+              {/* Group reactions by emoji */}
+              {Object.entries(
+                message.reactions.reduce((acc, r) => {
+                  acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                  return acc;
+                }, {} as Record<string, number>)
+              ).slice(0, 3).map(([emoji, count]) => (
+                <span key={emoji} className="text-xs flex items-center">
+                  {emoji}
+                  {count > 1 && <span className="text-[10px] text-text-secondary ml-0.5">{count}</span>}
                 </span>
               ))}
-              {message.reactions.length > 3 && (
-                <span className="text-xs text-text-secondary ml-1">
-                  +{message.reactions.length - 3}
-                </span>
-              )}
             </div>
           )}
         </div>
@@ -288,63 +427,114 @@ export function MessageBubble({ message, isOwn, showSender = false }: MessageBub
             variant="ghost"
             size="icon"
             className="h-7 w-7"
-            onClick={() => setShowMenu(!showMenu)}
+            onClick={() => {
+              setShowMenu(!showMenu);
+              setShowReactions(false);
+              setShowDeleteOptions(false);
+            }}
           >
             <MoreVertical className="h-4 w-4 text-text-secondary" />
           </Button>
 
           {/* Context menu */}
-          {showMenu && (
-            <div
-              className={`absolute ${isOwn ? 'right-0' : 'left-0'
-                } mt-1 w-40 bg-surface border border-border rounded-lg shadow-modal z-10`}
-            >
-              <button
-                className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-surface-hover flex items-center gap-2"
-                onClick={() => {
-                  setReplyingTo(message);
-                  setShowMenu(false);
-                }}
+          <AnimatePresence>
+            {showMenu && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className={`absolute ${isOwn ? 'right-0' : 'left-0'
+                  } mt-1 w-44 bg-surface border border-border rounded-lg shadow-modal z-20`}
               >
-                <Reply className="h-4 w-4" />
-                Reply
-              </button>
-              <button
-                className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-surface-hover flex items-center gap-2"
-                onClick={() => {
-                  navigator.clipboard.writeText(message.content);
-                  setShowMenu(false);
-                }}
-              >
-                <Copy className="h-4 w-4" />
-                Copy
-              </button>
-              <button
-                className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-surface-hover flex items-center gap-2"
-                onClick={() => setShowMenu(false)}
-              >
-                <Forward className="h-4 w-4" />
-                Forward
-              </button>
-              <button
-                className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-surface-hover flex items-center gap-2"
-                onClick={() => setShowMenu(false)}
-              >
-                <Star className="h-4 w-4" />
-                Star
-              </button>
-              <button
-                className="w-full px-3 py-2 text-left text-sm text-danger hover:bg-surface-hover flex items-center gap-2"
-                onClick={() => setShowMenu(false)}
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </button>
-            </div>
-          )}
+                {/* Reaction picker row */}
+                <div className="px-2 py-2 border-b border-border">
+                  <div className="flex justify-between">
+                    {REACTIONS.map((r) => (
+                      <button
+                        key={r.label}
+                        onClick={() => handleReaction(r.emoji)}
+                        className="w-8 h-8 flex items-center justify-center text-lg hover:scale-125 hover:bg-surface-hover rounded-full transition-all"
+                        title={r.label}
+                      >
+                        {r.emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Menu items */}
+                <button
+                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-surface-hover flex items-center gap-2"
+                  onClick={() => {
+                    setReplyingTo(message);
+                    setShowMenu(false);
+                  }}
+                >
+                  <Reply className="h-4 w-4" />
+                  Reply
+                </button>
+
+                {message.type === 'text' && (
+                  <button
+                    className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-surface-hover flex items-center gap-2"
+                    onClick={handleCopy}
+                  >
+                    <Copy className="h-4 w-4" />
+                    Copy
+                  </button>
+                )}
+
+                <button
+                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-surface-hover flex items-center gap-2"
+                  onClick={handleForward}
+                >
+                  <Forward className="h-4 w-4" />
+                  Forward
+                </button>
+
+                {/* Delete options */}
+                {!showDeleteOptions ? (
+                  <button
+                    className="w-full px-3 py-2 text-left text-sm text-danger hover:bg-surface-hover flex items-center gap-2"
+                    onClick={() => setShowDeleteOptions(true)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </button>
+                ) : (
+                  <div className="border-t border-border">
+                    <button
+                      className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-surface-hover flex items-center gap-2"
+                      onClick={handleDeleteForMe}
+                      disabled={isDeleting}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete for me
+                    </button>
+                    {isOwn && (
+                      <button
+                        className="w-full px-3 py-2 text-left text-sm text-danger hover:bg-surface-hover flex items-center gap-2"
+                        onClick={handleDeleteForEveryone}
+                        disabled={isDeleting}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete for everyone
+                      </button>
+                    )}
+                    <button
+                      className="w-full px-3 py-2 text-left text-sm text-text-secondary hover:bg-surface-hover flex items-center gap-2"
+                      onClick={() => setShowDeleteOptions(false)}
+                    >
+                      <X className="h-4 w-4" />
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </motion.div>
   );
 }
-
