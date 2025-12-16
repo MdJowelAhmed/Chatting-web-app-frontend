@@ -916,6 +916,9 @@ video {
 .max-w-xs {
   max-width: 20rem;
 }
+.max-w-\[200px\] {
+  max-width: 200px;
+}
 .flex-1 {
   flex: 1 1 0%;
 }
@@ -1255,6 +1258,9 @@ video {
 .bg-transparent {
   background-color: transparent;
 }
+.bg-background\/50 {
+  background-color: rgb(17 27 33 / 0.5);
+}
 .bg-gradient-to-b {
   background-image: linear-gradient(to bottom, var(--tw-gradient-stops));
 }
@@ -1500,6 +1506,9 @@ video {
 .opacity-90 {
   opacity: 0.9;
 }
+.opacity-50 {
+  opacity: 0.5;
+}
 .shadow {
   --tw-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   --tw-shadow-colored: 0 1px 3px 0 var(--tw-shadow-color), 0 1px 2px -1px var(--tw-shadow-color);
@@ -1544,6 +1553,9 @@ video {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
 }
+.duration-100 {
+  transition-duration: 100ms;
+}
 @keyframes enter {
 
   from {
@@ -1557,6 +1569,9 @@ video {
     opacity: var(--tw-exit-opacity, 1);
     transform: translate3d(var(--tw-exit-translate-x, 0), var(--tw-exit-translate-y, 0), 0) scale3d(var(--tw-exit-scale, 1), var(--tw-exit-scale, 1), var(--tw-exit-scale, 1)) rotate(var(--tw-exit-rotate, 0));
   }
+}
+.duration-100 {
+  animation-duration: 100ms;
 }
 
 /* Custom scrollbar */

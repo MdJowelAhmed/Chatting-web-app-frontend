@@ -135,6 +135,8 @@ export const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhos
 export function getMediaUrl(path: string): string {
   if (!path) return '';
   if (path.startsWith('http')) return path;
-  return `${API_URL}/uploads/${path}`;
+  // Remove leading 'uploads/' if present to avoid duplication
+  const cleanPath = path.startsWith('uploads/') ? path.substring(8) : path;
+  return `${API_URL}/uploads/${cleanPath}`;
 }
 
